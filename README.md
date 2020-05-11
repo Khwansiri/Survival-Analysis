@@ -14,4 +14,4 @@ The codes of each part are provided as follows:
 [Part 1: Relationship between radiologic/clinicopathologic features and death status](https://github.com/Khwansiri/Survival-Analysis/blob/master/Feature%20vs%20Death.Rmd)  
 [Part 2: Relationship between radiologic/clinicopathologic features and survival time
 (univariate analysis)](https://github.com/Khwansiri/Survival-Analysis/blob/master/Feature%20vs%20SurvivalTime.Rmd)  
-[Part 3: Model building and diagnosis]()  
+[Part 3: Model building and diagnosis](https://github.com/Khwansiri/Survival-Analysis/blob/master/Model%20building%20and%20diagnosis.Rmd)  
