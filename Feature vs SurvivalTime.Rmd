@@ -1,0 +1,588 @@
+---
+title: "Lung Cancer Prognosis"
+author: "Lisa KOPPE, Khwansiri NINPAN, Princy PAPPACHAN"
+date: "4/23/2020"
+output: word_document
+---
+
+Paper:
+[Integrated evaluation of clinical, pathological and radiological prognostic factors in squamous cell carcinoma of the lung](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6777828/)
+
+# Import the necessary packages:
+
+```{r}
+library(tidyverse)
+library(survival)
+library(survminer)
+library(asaur)
+```
+
+# Data preparation: load the lung cancer dataset and check data types
+
+```{r}
+lungSCC_raw <- read_csv("../LungCancer.csv",
+                         col_types=cols(Sex='c',
+                                       Age='c',
+                                       Location='d',
+                                       Obst_pn_or_plugging='d',
+                                       Necrosis='d',
+                                       Underlying_lung='d',
+                                       Effusion='d',
+                                       LN_ratio='d',
+                                       cT='c',
+                                       cN='c',
+                                       cM='c',
+                                       pT='c',
+                                       pN='c',
+                                       pM='c',
+                                       Smoking_state='c',  
+                                       FEV1_FVC='d',
+                                       CEA='d',
+                                       op_type='c',
+                                       death='d',
+                                       OP_site_recur='l',
+                                       meta='l',
+                                       OS = "d",
+                                       .default = 'c'))
+```
+
+
+Redefine the meaning of each label to make it easier for interpretation
+
+```{r}
+
+lungSCC <- mutate(lungSCC_raw,
+                  Location=ifelse(Location==0, "Peripheral", "Central"),
+                  
+                  Sex=factor(Sex, levels=c("F", "M")),
+
+                  Necrosis = factor(Necrosis, levels = c("0", "1", "2"), labels = c("NoRemark", "Necrosis", "Cavitation")),
+                  Necrosis <- relevel(Necrosis, "NoRemark"),
+
+                  Underlying_lung = factor(Underlying_lung, levels = c("0", "1", "2"), labels = c("NoRemark", "Emphysema", "ILA")),
+                  Underlying_lung <- relevel(Underlying_lung, "NoRemark"),
+
+                  Effusion=factor(Effusion, levels=c("0", "1"), labels=c("Absent", "Present")),
+
+                  AG = ifelse((Age<60), "LT60", "OV60"),
+                  AG = factor(AG),
+
+                  OP = factor(op_type, levels = c("5", "1", "2", "3", "4"), labels = c("No op", "Lobectomy", "Pneumonectomy", "Segmentectomy", "LN biopsy")),
+                  OP <- relevel(OP, "No op"),
+
+                  Smoking_state = factor(Smoking_state, levels = c("3", "0", "1", "2"), labels = c("Non-smoker", "Current-smoker", "Ex-smoker", "Unknown")),
+                  Smoking_state <- relevel(Smoking_state, "Non-smoker"),
+
+                  cT = factor(cT, levels = c("1", "2", "3", "4"), labels = c("cT1", "cT2", "cT3", "cT4")),
+
+                  cN = factor(cN, levels = c("1", "2", "3", "4"), labels = c("cN0", "cN1", "cN2", "cN3")),
+
+                  cM = factor(cM, levels = c("1", "3"), labels = c("cM0", "cM1b")),
+
+                  pT = factor(pT, levels = c("1", "2", "3", "4"), labels = c("pT1", "pT2", "pT3", "pT4")),
+
+                  pN = factor(pN, levels = c("1", "2", "3", "4"), labels = c("pN0", "pN1", "pN2", "pN3")),
+
+                  pM = factor(pM, levels = c("1", "3"), labels = c("pM0", "pM1b")))
+```
+
+# Features description
+
+1. Location
+   = Tumor location
+   (0 = Peripheral SCC, 1 = Central SCC)
+
+2. death
+   (0 = Alive, 1 = Dead)
+
+3. OS
+   = Overall Survival in months: interval between the date of diagnosis and date of death (by any cause)
+
+## Radiologic features:
+
+4. Obst_pn_or_plugging
+   = Presence of obstructive pneumonitis/atelectais
+   (0 = Absent, 1 = Present)
+
+5. Necrosis
+   (0 = No Remark, 1 = Necrosis, 2 = Cavitation)
+
+6. Underlying_lung
+   = Underlying lung disease
+   (0 = No Remark, 1 = Emphysema, 2 = Interstitial lung abnormality)
+
+7. Effusion
+   (0 = Absent, 1 = Present)
+
+## Clinicopathologic features:
+
+8. Sex
+   = Gender of the patient
+   (F=Female, M=Male)
+
+9. AG
+   = Age at diagnosis
+   (LT60 = Less than 60 years old, OV60 = Over 60 years old)
+
+10. LN_ratio
+    = Lymph node ratio: Number of nodes with positive tumor cells divided by the number of all resected nodes
+
+11. cT
+    = Size of original tumor in central lung SCC patients
+    (1 = T1, 2 = T2, 3 = T3, 4 = T4)
+
+12. cN
+    = Nearby lymph nodes involved in central lung SCC patients
+    (1 = N0, 2 = N1, 3 = N2, 4 = N3)
+
+13. cM
+    = Distant metastasis (spread of cancer from one part of the body to another) in central lung SCC patients
+    (1 = M0, 2 = M1a, 3 = M1b, 4 = M1ab, 5 = Mx)
+
+14. pT
+    = Size of original tumor in peripheral lung SCC patients
+    (1 = T1, 2 = T2, 3 = T3, 4 = T4)
+
+15. pN
+    = Nearby lymph nodes involved in peripheral lung SCC patients
+    (1 = N0, 2 = N1, 3 = N2, 4 = N3)
+
+16. pM
+    = Distant metastasis (spread of cancer from one part of the body to another) in peripheral lung SCC patients
+    (1 = M0, 2 = M1a, 3 = M1b, 4 = M1ab, 5 = Mx)
+
+17. Smoking_state
+    = Current smoking state of the patient
+    (current-smoker, ex-smoker, non-smoker, unknown)
+
+18. FEV1_FVC
+    = Pulmonary function test in %: forced expiratory volume in a second / forced vital capacity
+
+19. CEA
+    = Serum carcinoembryonic antigen level in ng/ml (tumor marker)
+
+20. OP
+    = Type of operation the person has undergone
+    (lobectomy, pneumonectomy, segmentectomy, LN biopsy, no Op)
+
+21. meta
+    = Metastasis observed
+    (0=Absent, 1=Present)
+    
+______________________________________________________________________________________
+
+*# Part2: Test relationship between radiologic/clinicopathologic features and survival time (OS)*
+
+*## Part2.A: Cox Proportional Hazards Regression Model fit*
+
+Methods used: Cox Proportional Hazards Model
+
+The Cox regression results can be interpreted as follow:
+
+*1. Statistical significance:*
+The Wald statistic value z, corresponds to the ratio of each regression coefficient to its standard error (z = coef/se(coef)). The wald statistic evaluates, whether the beta (β) coefficient of a given variable is statistically significantly different from 0. 
+
+*2. The regression coefficient:*
+The second feature to note in the Cox model results is the the sign of the regression coefficients (coef). A positive sign means that the hazard (risk of death) is higher, and thus the prognosis worse, for subjects with higher values of that variable. The R summary for the Cox model gives the hazard ratio (HR) for the second group relative to the first group.
+
+*3. Hazard ratios (HR):*
+The exponentiated coefficient (exp(coef)) gives the effect size of covariates.
+
+*4. Confidence intervals of the hazard ratios:*
+The summary output also gives upper and lower 95% confidence intervals for the hazard ratio (exp(coef)).
+
+*5. Global statistical significance of the model:*
+Finally, the output gives p-values for three alternative tests for overall significance of the model: The likelihood-ratio test, Wald test, and score logrank statistics. These three methods are asymptotically equivalent. For large enough N, they will give similar results. For small N, they may differ somewhat. The Likelihood ratio test has better behavior for small sample sizes, so it is generally preferred.
+
+Thanks to these results, we can decide to reject or keep covariates for the upcoming study based on their statistical significance.
+
+
+*## Part2.A.1: Cox Proportional Hazards Regression Model fit including all the studied features*
+
+```{r}
+lungSCC_fullmodel <- coxph(Surv(OS, death) ~ Location + Obst_pn_or_plugging + Necrosis + Underlying_lung + Effusion + Sex + AG + LN_ratio + cT+ cN + cM + pT+ pN+ pM + Smoking_state + FEV1_FVC + CEA + OP + meta, data=lungSCC)
+
+summary(lungSCC_fullmodel)
+```
+
+
+Let's save the table of results in a csv file:
+```{r}
+broom::tidy(lungSCC_fullmodel) %>%
+   write_csv("coefficients_table.csv")
+```
+
+We will now compute the Cox Proportional Hazards Regression Model fit for each individual variable and their corresponding confidence intervals (CI).
+This step will help us select the significant covariate for the upcoming study.
+
+
+*## Part2.A.2: Cox Proportional Hazards Regression Model fit - Univariate Analysis*
+
+We here split the analysis into two groups of features:
+- Radiologic features
+- Clinicopathologic features
+
+
+*### Part2.A.2.a:Relationship between radiologic features and survival time (OS)*
+
+Features to be analyzed in this part:
+
+1. Location vs OS: tumor location
+2. Obst_pn_or_plugging vs OS: patients with or without obstructive pneumonitis/atelectasis
+3. Necrosis vs OS: patients with or without cell necrosis or cavitation observed
+4. Underlying_lung vs OS: the type of underlying lung disease observed
+5. Effusion vs OS: patient with or without observed lung effusion
+
+
+1. Location vs OS: tumor location:
+```{r}
+fit_location <- coxph(Surv(OS, death) ~ Location, data=lungSCC)
+summary(fit_location)
+```
+
+2. Obst_pn_or_plugging vs OS: patients with or without obstructive pneumonitis/atelectasis:
+```{r}
+fit_Obst_pn_or_plugging <- coxph(Surv(OS, death) ~ Obst_pn_or_plugging, data=lungSCC)
+summary(fit_Obst_pn_or_plugging)
+```
+
+3. Necrosis vs OS: patients with or without cell necrosis or cavitation observed:
+```{r}
+fit_necrosis <- coxph(Surv(OS, death) ~ Necrosis, data=lungSCC)
+summary(fit_necrosis)
+```
+
+4. Underlying_lung vs OS: the type of underlying lung disease observed:
+```{r}
+fit_UndLung <- coxph(Surv(OS, death) ~ Underlying_lung, data=lungSCC)
+summary(fit_UndLung)
+```
+
+5. Effusion vs OS: patient with or without observed lung effusion:
+```{r}
+fit_effusion <- coxph(Surv(OS, death) ~ Effusion, data=lungSCC)
+summary(fit_effusion)
+```
+
+
+*### Part2.A.2.b:Relationship between clinicopathologic features and survival time (OS)*
+
+Features to be analyzed in this part:
+
+1. Sex vs OS: gender of the patient
+2. AG vs OS: age of the patient at diagnosis
+3. LN_ratio vs OS: lymph node ratio
+4. cT vs OS: central lung SCC size of tumor
+5. cN vs OS: when nearby lymph nodes are involved
+6. cM vs OS: when distant metastasis are involved
+7. pT vs OS: peripheral lung SCC size of tumor
+8. pN vs OS: when nearby lymph nodes are involved
+9. pM vs OS: when distant metastasis are involved
+10. Smoking_state vs OS: current smoking state of the patient
+11. FEV1_FVC vs OS: pulmonary function test
+12. CEA vs OS: serum carcinoembryonic antigen level
+13. OP vs OS: the type of operation undergone by the patient
+14. meta vs OS: patient with and without observed metastasis after surgery
+
+
+1. Sex vs OS: gender of the patient:
+```{r}
+fit_Sex <- coxph(Surv(OS, death) ~ Sex, data=lungSCC)
+summary(fit_Sex)
+```
+
+2. AG vs OS: age of the patient at diagnosis:
+```{r}
+fit_Age <- coxph(Surv(OS, death) ~ AG, data=lungSCC)
+summary(fit_Age)
+```
+
+3. LN_ratio vs OS: lymph node ratio:
+```{r}
+fit_LNratio <- coxph(Surv(OS, death) ~ LN_ratio, data=lungSCC)
+summary(fit_LNratio)
+```
+
+4. cT vs OS: central lung SCC size of tumor:
+```{r}
+fit_cT <- coxph(Surv(OS, death) ~ cT, data=lungSCC)
+summary(fit_cT)
+```
+
+5. cN vs OS: when nearby lymph nodes are involved:
+```{r}
+fit_cN <- coxph(Surv(OS, death) ~ cN, data=lungSCC)
+summary(fit_cN)
+```
+
+6. cM vs OS: when distant metastasis are involved:
+```{r}
+fit_cM <- coxph(Surv(OS, death) ~ cM, data=lungSCC)
+summary(fit_cM)
+```
+
+7. pT vs OS: peripheral lung SCC size of tumor:
+```{r}
+fit_pT <- coxph(Surv(OS, death) ~ pT, data=lungSCC)
+summary(fit_pT)
+```
+
+8. pN vs OS: when nearby lymph nodes are involved:
+```{r}
+fit_pN <- coxph(Surv(OS, death) ~ pN, data=lungSCC)
+summary(fit_pN)
+```
+
+9. pM vs OS: when distant metastasis are involved:
+```{r}
+fit_pM <- coxph(Surv(OS, death) ~ pM, data=lungSCC)
+summary(fit_pM)
+```
+
+10. Smoking_state vs OS: current smoking state of the patient:
+```{r}
+fit_Smoking_state <- coxph(Surv(OS, death) ~ Smoking_state, data=lungSCC)
+summary(fit_Smoking_state)
+```
+
+11. FEV1_FVC vs OS: pulmonary function test:
+```{r}
+fit_FEV1FVC <- coxph(Surv(OS, death) ~ FEV1_FVC, data=lungSCC)
+summary(fit_FEV1FVC)
+```
+
+12. CEA vs OS: serum carcinoembryonic antigen level:
+```{r}
+fit_CEA <- coxph(Surv(OS, death) ~ CEA, data=lungSCC)
+summary(fit_CEA)
+```
+
+13. OP vs OS: the type of operation undergone by the patient:
+```{r}
+fit_op_type <- coxph(Surv(OS, death) ~ OP, data=lungSCC)
+summary(fit_op_type)
+
+```
+
+14. meta vs OS: patient with and without observed metastasis after surgery:
+```{r}
+fit_meta <- coxph(Surv(OS, death) ~ meta, data=lungSCC)
+summary(fit_meta)
+```
+
+
+*## Part2.A.3: Kaplan-Meier estimator with features which have a significant relationship with survival time (OS)*
+
+List of features which have a significant relationship with survival time (OS):
+
+1. Comparison between 2 groups of patients based on underlying lung disease
+2. Comparison between 2 groups of patients based on their age
+3. Comparison between 2 groups of patients based on central lung SCC size of tumor
+4. Comparison between 2 groups of patients based on cN when nearby lymph nodes are involved
+5. Comparison between 2 groups of patients based on peripheral lung SCC size of tumor
+6. Comparison between 2 groups of patients based on pN when nearby lymph nodes are involved
+7. Comparison between 2 groups of patients based on pM when distant metastasis are involved
+8. Comparison between 2 groups of patients based on the observation of metastasis after surgery
+
+
+1. Comparison between 2 groups of patients based on underlying lung disease:
+```{r}
+fit.KM_under <- survfit(Surv(OS, death) ~ Underlying_lung, data=lungSCC)
+fit.KM_under
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_under,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "Underlying lung disease",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_Underlying lung disease.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ Underlying_lung, data=lungSCC)
+```
+
+
+2. Comparison between 2 groups of patients based on their age:
+```{r}
+fit.KM_AG <- survfit(Surv(OS, death) ~ AG, data=lungSCC)
+fit.KM_AG
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_AG,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "Age",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_Age.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ AG, data=lungSCC)
+```
+
+
+3. Comparison between 2 groups of patients based on central lung SCC size of tumor:
+```{r}
+fit.KM_cT <- survfit(Surv(OS, death) ~ cT, data=lungSCC)
+fit.KM_cT
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_cT,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "central lung SCC size of tumor",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_cT.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ cT, data=lungSCC)
+```
+
+
+4. Comparison between 2 groups of patients based on cN when nearby lymph nodes are involved:
+```{r}
+fit.KM_cN <- survfit(Surv(OS, death) ~ cN, data=lungSCC)
+fit.KM_cN
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_cN,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "cN when nearby lymph nodes are involved",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_cN.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ cN, data=lungSCC)
+```
+
+
+5. Comparison between 2 groups of patients based on peripheral lung SCC size of tumor:
+```{r}
+fit.KM_pT <- survfit(Surv(OS, death) ~ pT, data=lungSCC)
+fit.KM_pT
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_pT,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "peripheral lung SCC size of tumor",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_pT.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ pT, data=lungSCC)
+```
+
+
+6. Comparison between 2 groups of patients based on pN when nearby lymph nodes are involved:
+```{r}
+fit.KM_pN <- survfit(Surv(OS, death) ~ pN, data=lungSCC)
+fit.KM_pN
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_pN,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "pN when nearby lymph nodes are involved",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_pN.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ pN, data=lungSCC)
+```
+
+
+7. Comparison between 2 groups of patients based on pM when distant metastasis are involved:
+```{r}
+fit.KM_pM <- survfit(Surv(OS, death) ~ pM, data=lungSCC)
+fit.KM_pM
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_pM,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "pM when distant metastasis are involved",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_pM.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ pM, data=lungSCC)
+```
+
+
+8. Comparison between 2 groups of patients based on the observation of metastasis after surgery:
+```{r}
+fit.KM_meta <- survfit(Surv(OS, death) ~ meta, data=lungSCC)
+fit.KM_meta
+```
+
+We plot the Kaplan-Meier survival curve:
+```{r}
+gg <- ggsurvplot(fit.KM_meta,
+           legend = "bottom",
+           conf.int = TRUE,
+           linetype = "strata",
+           legend.title = "metastasis after surgery",
+           xlab = "Months",
+           ylab = "Survival probability")
+gg
+ggsave("KM_meta.png", plot=print(gg))
+```
+
+The logrank test:
+```{r}
+survdiff(Surv(OS, death) ~ meta, data=lungSCC)
+```
+
+
+
