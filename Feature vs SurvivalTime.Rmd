@@ -5,7 +5,7 @@ date: "4/23/2020"
 output: word_document
 ---
 
-Paper:
+Data Source:
 [Integrated evaluation of clinical, pathological and radiological prognostic factors in squamous cell carcinoma of the lung](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6777828/)
 
 # Import the necessary packages:
